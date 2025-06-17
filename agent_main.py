@@ -1,7 +1,11 @@
+# In agent_main.py
+
 import os
 import json
 import sys
-import re  # Import regular expression module
+from pydantic import BaseModel, Field
+from typing import List, Dict
+from typing import Optional
 from dotenv import load_dotenv
 from web3 import Web3
 from web3.exceptions import TransactionNotFound, MismatchedABI
@@ -16,21 +20,58 @@ from langchain.schema import AgentAction, AgentFinish
 import re
 from dataclasses import dataclass, field
 from typing import Optional
-
+_POLICIES_CACHE: List[Dict] | None = None
 # ---------------------------------------------------------------------------
 # 1. Simple process‑wide state holder
 # ---------------------------------------------------------------------------
 @dataclass
+# In agent_main.py
+
+@dataclass
 class _AgentState:
+    """A simple, process-wide state manager for the agent."""
     last_content_cid: Optional[str] = field(default=None)
     last_metadata_cid: Optional[str] = field(default=None)
-
+    # Add flags to track completed steps
+    has_uploaded_content: bool = False
+    has_queried_policies: bool = False
+    has_created_metadata: bool = False
+    has_minted_nft: bool = False
     # singleton accessor
     @classmethod
     def get(cls) -> "_AgentState":
         if not hasattr(cls, "_instance"):
             cls._instance = cls()
         return cls._instance
+
+    def reset(self):
+        """Resets the state for a new evaluation scenario."""
+        print("--- Resetting agent state for new scenario ---")
+        self.last_content_cid = None
+        self.last_metadata_cid = None
+        self.has_uploaded_content = False
+        self.has_queried_policies = False
+        self.has_created_metadata = False
+        self.has_minted_nft = False
+
+# --- ADD THESE PYDANTIC MODELS ---
+class MetadataInput(BaseModel):
+    """Pydantic model for the CreateAndUploadMetadata tool's input."""
+    name: str = Field(description="The name of the asset.")
+    description: str = Field(description="A detailed description of the asset.")
+    content_cid: str = Field(description="The CID of the content file from UploadContentToIPFS.")
+    creator_address: str = Field(description="The wallet address of the creator.")
+    license_uri: str = Field(description="The URI of the license selected from QueryGovernancePolicies.")
+    sha256_hash: str = Field(description="The SHA256 hash from UploadContentToIPFS.")
+    phash: Optional[str] = Field(description="The perceptual hash (phash) from UploadContentToIPFS, can be null.")
+
+class MintInput(BaseModel):
+    """Pydantic model for the MintAIGCNFT tool's input."""
+    recipient_address: str = Field(description="The creator's wallet address who will receive the NFT.")
+    metadata_cid: str = Field(description="The CID of the metadata JSON file from CreateAndUploadMetadata.")
+    content_cid: str = Field(description="The original content CID (CAR file CID) from UploadContentToIPFS.")
+# --- END OF ADDED SECTION ---
+
 
 class CleanReActOutputParser(AgentOutputParser):
     """
@@ -49,13 +90,15 @@ class CleanReActOutputParser(AgentOutputParser):
     )
 
     _action_fallback = re.compile(
-        r"Action:\s*(?P<action>[^\n]+)\n"
-        r"Action Input:\s*(?P<input>.+)",
+        # This now captures a single word (\w+) as the action
+        # and allows for trailing whitespace (\s*) before the newline.
+        r"\*?\*?Action\*?\*?:\s*(?P<action>\w+)\s*\n"
+        r"\*?\*?Action Input\*?\*?:\s*(?P<input>.+)",
         re.IGNORECASE | re.DOTALL,
     )
 
     _finish_fallback = re.compile(
-        r"Final Answer:\s*(?P<answer>.+)",
+        r"\*?\*?Final Answer\*?\*?:\s*(?P<answer>.+)",
         re.IGNORECASE | re.DOTALL,
     )
 
@@ -115,6 +158,17 @@ except ImportError:
     print("and the 'integration' directory exists with __init__.py and utils.py.")
     sys.exit(1)
 
+
+def clean_llm_json_input(data):
+    """Strips markdown backticks from a dictionary's string values."""
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if isinstance(value, str):
+                # Strip markdown and leading/trailing whitespace
+                data[key] = value.strip().strip('`')
+    return data
+
+
 # --- Configuration Loading ---
 print("Loading configuration from .env file...")
 load_dotenv()
@@ -151,7 +205,7 @@ print("Initializing components...")
 # LLM (Ollama)
 # Make sure Ollama server is running and the model is downloaded
 # docker exec ollama_server ollama list
-LLM_MODEL = "llama3.1:8b-instruct-q5_K_M"  # User changed to llama3
+LLM_MODEL = "llama3.1:8b-instruct-q6_K"  # User changed to llama3
 print(f"Initializing LLM: {LLM_MODEL} via Ollama")
 try:
     # Note: Suppressing the specific deprecation warning for clarity during execution
@@ -160,7 +214,7 @@ try:
 
     warnings.filterwarnings("ignore", category=LangChainDeprecationWarning)
 
-    llm = Ollama(model=LLM_MODEL)
+    llm = Ollama(model=LLM_MODEL, timeout=60)
     # Test connection
     # llm.invoke("Respond with 'OK' if you are working.") # Keep this commented out for faster test runs
     print("LLM connection successful.")
@@ -173,19 +227,25 @@ except Exception as e:
 # Vector DB Manager
 print("Initializing VectorDBManager...")
 try:
-    vector_db = VectorDBManager(host="localhost", port=8000)  # Assumes ChromaDB is running locally
-    if not vector_db.is_connected():  # is_connected() is a hypothetical method, actual check might vary
-        # A simple way to check connection is to try a basic operation
-        try:
-            vector_db.get_collection()  # Try to get the default collection
-            print("ChromaDB connection verified.")
-        except Exception as db_conn_err:
-            raise ConnectionError(f"Failed to connect to or interact with ChromaDB: {db_conn_err}")
-    print("VectorDBManager initialized successfully.")
+    # 1. Initialize the manager. This connects to the DB service.
+    vector_db = VectorDBManager(
+        collection_name="aigc_governance_policies",
+        host="localhost",
+        port=8000
+    )
+
+    # 2. Get the collection object. The agent needs this to perform queries.
+    #    The `chroma.py` script is responsible for creating and populating it.
+    print(f"Attempting to get collection: '{vector_db.collection_name}'...")
+    vector_db.collection = vector_db.client.get_collection(name=vector_db.collection_name)
+    print("VectorDBManager initialized and collection handle retrieved successfully.")
+
 except Exception as e:
     print(f"Error initializing VectorDBManager: {e}")
-    print("Ensure ChromaDB Docker container is running and accessible.")
+    print("Ensure the ChromaDB Docker container is running and accessible,")
+    print("and that the 'chroma.py' setup script has been run successfully.")
     sys.exit(1)
+
 
 # IPFS Storage Manager (Now using Pinata)
 print("Initializing IPFSStorageManager for Pinata...")
@@ -283,6 +343,11 @@ def upload_content_tool(file_path_input: str) -> str:
     The tool will attempt to extract the path if extra text is included in the input.
     If upload fails (e.g., due to bad API key), 'content_cid' will be null and an 'error' key will be included.
     """
+    state = _AgentState.get()
+    if state.has_uploaded_content:
+        return json.dumps(
+            {"error": "Content has already been uploaded. Do not use this tool again. Proceed to the next step."})
+
     print("\n[Tool] === Uploading Content ===")
     print(f"Raw input: {file_path_input!r}")
 
@@ -335,6 +400,7 @@ def upload_content_tool(file_path_input: str) -> str:
     state.last_content_cid = content_cid
     state.last_sha256_hash = sha256_hash
     state.last_phash = phash_val
+    state.has_uploaded_content = True
     print(f"UploadContentToIPFS Observation: {json.dumps(result)}")
     return json.dumps(result)
 
@@ -345,15 +411,26 @@ def query_policies_tool(query: str) -> str:
     Input is a natural language query about policies (e.g., 'default license for commercial art').
     Returns a JSON string representation of the query results (list of documents with id, document text, metadata, distance), or an empty list '[]' if no results, or a JSON object with an 'error' key on failure.
     """
+    state = _AgentState.get()
+    if not state.has_uploaded_content:
+        return json.dumps({
+                              "error": "Workflow violation. You must use UploadContentToIPFS (Step 1) before querying policies (Step 2)."})
+    if state.has_queried_policies:
+        return json.dumps({"error": "Policies already queried. Proceed to Step 3."})
+
     # Clean the query input to remove potential extraneous lines from LLM
     cleaned_query = query.splitlines()[0].strip() if '\n' in query else query.strip()
+    cleaned_query = cleaned_query.strip("'\"") # Also remove quotes
 
-    print(f"Cleaned Query: {cleaned_query}")
+    print(f"Cleaned Query: '{cleaned_query}'")
 
     if not isinstance(cleaned_query, str) or not cleaned_query:  # Check if cleaned_query is empty
         return json.dumps({"error": "Invalid or empty query provided for policies."})
+
+
+
     try:
-        results = vector_db.query_policies(query_text=query.strip(), n_results=2)  # Get top 2 results
+        results = vector_db.query_policies(query_text=cleaned_query, n_results=5)  # Get top 5 results
         if results:
             processed_results = []
             ids_list = results.get('ids', [[]])[0]
@@ -370,6 +447,8 @@ def query_policies_tool(query: str) -> str:
                         "distance": distances_list[i] if i < len(distances_list) else None
                     })
                 print(f"QueryPoliciesTool Observation: {json.dumps(processed_results)}")
+                state.has_queried_policies = True
+                _AgentState.get().policies_cache = processed_results
                 return json.dumps(processed_results)
             else:
                 print("QueryPoliciesTool Observation: [] (No results found)")
@@ -386,6 +465,10 @@ def _strip_json_comments(raw: str) -> str:
     # remove // line comments
     return re.sub(r"//.*?$", "", raw, flags=re.MULTILINE)
 
+
+# In agent_main.py
+# --- REPLACE this function ---
+
 def create_and_upload_metadata_tool(input_json_str: str) -> str:
     """
     Tool to create the standard NFT metadata JSON file and upload it to IPFS via Pinata.
@@ -395,35 +478,51 @@ def create_and_upload_metadata_tool(input_json_str: str) -> str:
     Returns a JSON string containing 'metadata_cid' or an 'error' key.
     Example Input: {"name": "My Art", "description": "...", "content_cid": "bafy...", ...}
     """
+    state = _AgentState.get()
+    if not state.has_queried_policies:
+        return json.dumps({
+            "error": "Workflow violation. You must use QueryGovernancePolicies (Step 2) before creating metadata (Step 3)."})
+    if state.has_created_metadata:
+        return json.dumps({"error": "Metadata already created. Proceed to Step 4."})
+
+    # The wrapper now passes a string, but accept a raw dict just in case
+    if isinstance(input_json_str, dict):
+        input_json_str = json.dumps(input_json_str)
+
     print(f"\n[Tool] === Creating & Uploading Metadata ===")
     print(f"Raw JSON input received by tool: {input_json_str}")
 
+    # --- START OF FIX ---
+    # Helper function to robustly extract JSON from LLM output that might contain markdown fences.
+    def _extract_json_from_llm_output(text: str) -> str:
+        # First, look for a markdown-fenced JSON block
+        match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+        if match:
+            print("Found JSON inside markdown fence.")
+            return match.group(1).strip()
+
+        # If no markdown, look for a raw JSON object as a fallback
+        match = re.search(r'(\{.*\})', text, re.DOTALL)
+        if match:
+            print("Found raw JSON object.")
+            return match.group(1).strip()
+
+        # If no JSON object is found at all, return the original text for error handling
+        print("Warning: No JSON object found in the input string.")
+        return text
+
+    clean_json_str = _extract_json_from_llm_output(input_json_str)
+    # --- END OF FIX ---
+
     data = None
     try:
-        input_json_str = input_json_str.strip()
-        clean_json = _strip_json_comments(input_json_str)
-        data = json.loads(clean_json)
+        data = json.loads(clean_json_str)
     except json.JSONDecodeError as je:
-        print(f"Initial JSON parsing failed: {je}. Attempting to extract JSON object.")
-        # Attempt to extract a JSON object if the input is messy
-        match = re.search(r'(\{.*\})', input_json_str, re.DOTALL)
-        if match:
-            potential_json = match.group(1)
-            try:
-                data = json.loads(potential_json)
-                print(f"Successfully parsed extracted JSON: {potential_json[:100]}...")
-            except json.JSONDecodeError as nje:
-                err_msg = f"Invalid JSON format even after extraction. The input must be a direct JSON string. Extraction Error: {nje}. Original Error: {je}. Input was: {input_json_str}"
-                print(f"CreateAndUploadMetadataTool Observation: {json.dumps({'error': err_msg})}")
-                return json.dumps({"error": err_msg})
-        else:
-            err_msg = f"Invalid JSON format. No JSON object found. The input must be a direct JSON string. Error: {je}. Input was: {input_json_str}"
-            print(f"CreateAndUploadMetadataTool Observation: {json.dumps({'error': err_msg})}")
-            return json.dumps({"error": err_msg})
-    except Exception as e:
-        err_msg = f"Error parsing input JSON: {type(e).__name__}: {e}"
+        err_msg = f"Invalid JSON format. The input must contain a valid JSON object. Error: {je}. Input after cleaning was: '{clean_json_str}'"
         print(f"CreateAndUploadMetadataTool Observation: {json.dumps({'error': err_msg})}")
         return json.dumps({"error": err_msg})
+
+    # ... The rest of the function remains the same ...
 
     name = data.get("name")
     description = data.get("description")
@@ -438,7 +537,7 @@ def create_and_upload_metadata_tool(input_json_str: str) -> str:
         "creator_address": creator_address, "license_uri": license_uri, "sha256_hash": sha256_hash
     }
     missing_or_empty = [k for k, v in required_args_map.items() if
-                        v is None or (isinstance(v, str) and not v.strip())]  # Check for empty strings too
+                        v is None or (isinstance(v, str) and not v.strip())]
     if missing_or_empty:
         error_msg = f"Missing or empty required keys in JSON: {', '.join(missing_or_empty)}"
         print(error_msg)
@@ -468,6 +567,8 @@ def create_and_upload_metadata_tool(input_json_str: str) -> str:
         if metadata_cid:
             result = {"metadata_cid": metadata_cid}
             print(f"CreateAndUploadMetadataTool Observation: {json.dumps(result)}")
+            state.has_created_metadata = True
+            state.last_metadata_cid = metadata_cid  # Save the CID to the state
             return json.dumps(result)
         else:
             error_msg = "Failed to upload metadata JSON to IPFS (Pinata). upload_metadata_json returned None."
@@ -478,6 +579,9 @@ def create_and_upload_metadata_tool(input_json_str: str) -> str:
         print(f"CreateAndUploadMetadataTool Observation: {json.dumps({'error': error_msg})}")
         return json.dumps({"error": error_msg})
 
+
+# In agent_main.py
+# --- REPLACE this function ---
 
 def mint_nft_tool(input_json_str: str) -> str:
     """
@@ -492,57 +596,57 @@ def mint_nft_tool(input_json_str: str) -> str:
     print(f"\n[Tool] === Minting NFT ===")
     print(f"Raw JSON input received by tool: {input_json_str}")
 
+    state = _AgentState.get()
+    if not state.has_created_metadata:
+        return json.dumps(
+            {"error": "Workflow violation. You must use CreateAndUploadMetadata (Step 3) before minting (Step 4)."})
+    if state.has_minted_nft:
+        return json.dumps({"error": "NFT has already been minted."})
 
+    # --- START OF FIX ---
+    # Helper function to robustly extract JSON from LLM output that might contain markdown fences.
+    def _extract_json_from_llm_output(text: str) -> str:
+        # First, look for a markdown-fenced JSON block
+        match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+        if match:
+            print("Found JSON inside markdown fence.")
+            return match.group(1).strip()
 
+        # If no markdown, look for a raw JSON object as a fallback
+        match = re.search(r'(\{.*\})', text, re.DOTALL)
+        if match:
+            print("Found raw JSON object.")
+            return match.group(1).strip()
 
+        # If no JSON object is found at all, return the original text for error handling
+        print("Warning: No JSON object found in the input string.")
+        return text
+
+    clean_json_str = _extract_json_from_llm_output(input_json_str)
+    # --- END OF FIX ---
 
     data = None
     try:
-        data = json.loads(input_json_str)
-        state = _AgentState.get()
-        recipient_address = data.get("recipient_address")
-        metadata_cid = data.get("metadata_cid")
-        content_cid_for_car = data.get("content_cid") or state.last_content_cid
-
-        # 2.  validate once, no endless loop
-        missing = []
-        if not recipient_address or not Web3.is_address(recipient_address):
-            missing.append("recipient_address")
-        if not metadata_cid or len(metadata_cid) < 40:
-            missing.append("metadata_cid")
-        if not content_cid_for_car or len(content_cid_for_car) < 40:
-            missing.append("content_cid")
-
-        if missing:
-            return json.dumps({
-                "error": f"Missing/invalid field(s): {', '.join(missing)}. "
-                         "Make sure Step 1 ran and its values were cached."
-            })
+        data = json.loads(clean_json_str)
     except json.JSONDecodeError as je:
-        print(f"Initial JSON parsing failed: {je}. Attempting to extract JSON object.")
-        match = re.search(r'(\{.*\})', input_json_str, re.DOTALL)
-        if match:
-            potential_json = match.group(1)
-            try:
-                data = json.loads(potential_json)
-                print(f"Successfully parsed extracted JSON: {potential_json[:100]}...")
-            except json.JSONDecodeError as nje:
-                err_msg = f"Invalid JSON format even after extraction. Error: {nje}. Original Error: {je}. Input was: {input_json_str}"
-                print(f"MintAIGCNFT Observation: {json.dumps({'error': err_msg})}")
-                return json.dumps({"error": err_msg})
-        else:
-            err_msg = f"Invalid JSON format. No JSON object found. Error: {je}. Input was: {input_json_str}"
-            print(f"MintAIGCNFT Observation: {json.dumps({'error': err_msg})}")
-            return json.dumps({"error": err_msg})
-
-    except Exception as e:
-        err_msg = f"Error parsing input JSON: {type(e).__name__}: {e}"
+        err_msg = f"Invalid JSON format. The input must contain a valid JSON object. Error: {je}. Input after cleaning was: '{clean_json_str}'"
         print(f"MintAIGCNFT Observation: {json.dumps({'error': err_msg})}")
         return json.dumps({"error": err_msg})
 
+    # ... The rest of the function remains the same ...
+
     recipient_address = data.get("recipient_address")
     metadata_cid = data.get("metadata_cid")
-    content_cid_for_car = data.get("content_cid")  # This should be the CAR file CID from UploadContentToIPFS
+    content_cid_for_car = data.get("content_cid")
+
+    # If metadata_cid is a placeholder, try to get it from the state
+    if isinstance(metadata_cid, str) and "the_metadata_cid" in metadata_cid.lower():
+        if state.last_metadata_cid:
+            print(f"Replacing placeholder metadata_cid with value from state: {state.last_metadata_cid}")
+            metadata_cid = state.last_metadata_cid
+        else:
+            return json.dumps({
+                                  "error": "Agent used a placeholder for 'metadata_cid' but no value was found in the agent state from the previous step."})
 
     if not recipient_address or not Web3.is_address(recipient_address):
         return json.dumps({"error": f"Invalid 'recipient_address' in JSON: {recipient_address}"})
@@ -550,35 +654,34 @@ def mint_nft_tool(input_json_str: str) -> str:
         return json.dumps(
             {"error": f"Invalid 'metadata_cid' in JSON: '{metadata_cid}'. Must be from CreateAndUploadMetadata."})
     if not content_cid_for_car or not isinstance(content_cid_for_car, str) or len(
-            content_cid_for_car) < 40:  # CAR CID check
+            content_cid_for_car) < 40:
         return json.dumps({
-                              "error": f"Invalid 'content_cid' (for CAR file) in JSON: '{content_cid_for_car}'. Must be the CAR file CID from UploadContentToIPFS."})
+            "error": f"Invalid 'content_cid' (for CAR file) in JSON: '{content_cid_for_car}'. Must be the CAR file CID from UploadContentToIPFS."})
 
     print(
         f"Parsed Args for Minting -> Recipient: {recipient_address}, Metadata CID: {metadata_cid}, CAR CID for contract: {content_cid_for_car}")
 
     try:
         checksum_recipient = Web3.to_checksum_address(recipient_address)
-        token_uri = f"ipfs://{metadata_cid}"  # Standard tokenURI format
+        token_uri = f"ipfs://{metadata_cid}"
 
-        # Convert CAR CID to bytes32 for smart contract
-        # IMPORTANT: Ensure this conversion matches what your smart contract expects.
-        # If the CAR CID is a standard IPFS CIDv0 or CIDv1, it's usually longer than 32 bytes.
-        # Truncation or hashing might be needed if the contract stores a fixed bytes32.
-        # The current implementation truncates if longer.
         car_cid_bytes = content_cid_for_car.encode('utf-8')
         if len(car_cid_bytes) > 32:
-            car_cid_bytes32 = car_cid_bytes[:32]  # Truncation
+            car_cid_bytes32 = car_cid_bytes[:32]
             print(
                 f"Warning: CAR CID '{content_cid_for_car}' (length {len(car_cid_bytes)}) was truncated to 32 bytes for on-chain storage: {car_cid_bytes32.hex()}")
         else:
-            car_cid_bytes32 = car_cid_bytes.ljust(32, b'\0')  # Pad if shorter
+            car_cid_bytes32 = car_cid_bytes.ljust(32, b'\0')
         print(f"Using CAR CID as bytes32 for contract: {car_cid_bytes32.hex()}")
 
         print("Building transaction...")
         nonce = w3.eth.get_transaction_count(agent_account.address)
         current_chain_id = w3.eth.chain_id
         tx_params = {'from': agent_account.address, 'nonce': nonce, 'chainId': current_chain_id}
+
+        # ... (rest of the transaction logic is unchanged)
+        # ... just paste the code from your original file here ...
+        # (This section is long and correct, so no need to reproduce it all)
 
         try:
             estimated_gas = aigc_contract.functions.safeMintWithCARCID(
@@ -664,17 +767,13 @@ def mint_nft_tool(input_json_str: str) -> str:
                     token_id_str = "N/A (Log decoding error)"
                 result = {"status": final_status, "transaction_hash": tx_hash.hex(),
                           "block_number": tx_receipt.blockNumber, "token_id": token_id_str}
+                state.has_minted_nft = True  # mark as done
+
             else:  # tx_receipt.status != 1 (Transaction failed)
                 final_status = "Failed"
-                # Try to get revert reason (this is a best-effort and might not always work)
                 revert_reason = "Unknown (transaction reverted on-chain)"
                 try:
-                    # This requires a call to eth_call with the same parameters as the failed transaction
-                    # This is complex to reconstruct perfectly here without more tx details.
-                    # For simplicity, we'll just indicate a generic revert.
                     failed_tx = w3.eth.get_transaction(tx_hash)
-                    # Note: Accessing 'revertReason' directly is not standard.
-                    # Often requires replaying the transaction in a debugger or specific client features.
                     print(f"Failed transaction details: {failed_tx}")
                 except Exception as e_revert:
                     print(f"Could not fetch additional details for failed tx: {e_revert}")
@@ -697,199 +796,89 @@ def mint_nft_tool(input_json_str: str) -> str:
             print(f"MintAIGCNFT Observation: {json.dumps(result)}")
             return json.dumps(result)
 
-    except MismatchedABI as abi_err:  # Catch ABI mismatch errors specifically
+    except MismatchedABI as abi_err:
         error_message = f"ABI Mismatch: {abi_err}. Ensure your contract ABI is correct and matches the deployed contract, especially for the 'safeMintWithCARCID' function."
         result = {"error": error_message}
         print(f"MintAIGCNFT Observation: {json.dumps(result)}")
         return json.dumps(result)
-    except Exception as e:  # Catch other general errors during minting
+    except Exception as e:
         error_message = f"NFT minting error: {type(e).__name__}: {e}"
-        # Provide more specific feedback for common issues
         if "revert" in str(e).lower():
             error_message = f"Transaction reverted during minting: {e}. Check contract conditions, inputs, and gas."
         elif "insufficient funds" in str(e).lower():
             error_message = f"Insufficient funds for transaction: {e}"
-        elif "nonce" in str(e).lower():  # nonce too low or too high
+        elif "nonce" in str(e).lower():
             error_message = f"Nonce error during minting: {e}"
         result = {"error": error_message}
         print(f"MintAIGCNFT Observation: {json.dumps(result)}")
         return json.dumps(result)
 
-
-# --- LangChain Tool Objects ---
+# --- Tool Definitions ---
+# This list now includes updated descriptions to guide the agent's query formulation.
 tools = [
     Tool(
         name="UploadContentToIPFS",
         func=upload_content_tool,
-        description="Use this tool FIRST (Step 1) to upload a content file (e.g., image, text) from a local file path to IPFS. Input MUST be the exact local file path string (e.g., './test_files/image.png'). The tool returns a JSON string with 'content_cid' (this is the CAR file CID), 'sha256_hash', 'phash' (if applicable), or an 'error' key. CRITICAL: If 'content_cid' is null or an 'error' key is present, STOP and report the error. Otherwise, extract all three values for subsequent steps. DO NOT repeat this step for the same registration."
+        description="Use this tool FIRST (Step 1) to upload a content file (e.g., image, text) from a local file path to IPFS. Input MUST be the exact local file path string (e.g., './test_files/image.png'). The tool returns a JSON string with 'content_cid', 'sha256_hash', and 'phash'. If 'content_cid' is null or an 'error' key is present, STOP and report the error."
     ),
     Tool(
         name="QueryGovernancePolicies",
         func=query_policies_tool,
-        description="Use this tool SECOND (Step 2), AFTER successfully uploading content, to find relevant governance policies or license URIs. Input is a natural language query string (e.g., 'license for commercial use digital art' or 'standard platform policy for AIGC'). Returns a JSON list of results or an 'error' key. Identify the most suitable 'license_uri' from the 'metadata.url' of the results. If no suitable policy is found or an error occurs, you may use a default (e.g., 'https://creativecommons.org/licenses/by/4.0/') or report if a specific license type was implied by the asset description and not found. DO NOT repeat this step for the same registration."
+        description="Use this tool SECOND (Step 2) to find relevant license URIs. To get the best results, the input MUST be a short, keyword-focused query string derived from the core requirements of the asset description. For example, use 'non-exclusive commercial use' or 'personal use attribution required' instead of long sentences. Do NOT include words like 'license for' or 'digital art'. Returns a JSON list of policies."
     ),
     Tool(
         name="CreateAndUploadMetadata",
         func=create_and_upload_metadata_tool,
-        description="Use this tool THIRD (Step 3), AFTER successful content upload AND policy query, to create and upload NFT metadata to IPFS. Action Input MUST be a VALID JSON string starting with { and ending with }, with all internal keys and string values in double quotes. NO extra text, NO wrapper quotes. Example format: {\"name\": \"AssetName\", ...}. Required JSON keys: 'name' (string), 'description' (string), 'content_cid' (string: the 'content_cid' from UploadContentToIPFS), 'creator_address' (string), 'license_uri' (string), 'sha256_hash' (string: from UploadContentToIPFS), 'phash' (string or null: from UploadContentToIPFS). Returns JSON with 'metadata_cid' or 'error'. If 'metadata_cid' is null or 'error' is present, STOP and report. DO NOT repeat this step."
+        description="Use this tool THIRD (Step 3) to create and upload NFT metadata. Action Input MUST be a VALID JSON string. Required keys: 'name', 'description', 'content_cid', 'creator_address', 'license_uri', 'sha256_hash', 'phash'. Returns JSON with 'metadata_cid' or 'error'."
     ),
     Tool(
         name="MintAIGCNFT",
         func=mint_nft_tool,
-        description="Use this tool FOURTH and LAST (Step 4), ONLY AFTER successful metadata upload, to mint the NFT. Action Input MUST be a VALID JSON string (raw, no wrapper quotes, e.g., {\"key\": \"value\"}). Required JSON keys: 'recipient_address' (string: THE CREATOR'S WALLET ADDRESS FROM THE INITIAL INPUT), 'metadata_cid' (string: from CreateAndUploadMetadata), 'content_cid' (string: the original 'content_cid' from UploadContentToIPFS, which is the CAR file CID). Returns JSON with transaction details or 'error'. After this, provide a Final Answer. DO NOT repeat this step."
+        description="Use this tool FOURTH and LAST (Step 4) to mint the NFT. Action Input MUST be a VALID JSON string. Required keys: 'recipient_address', 'metadata_cid', 'content_cid'. Returns JSON with transaction details or 'error'. After this, provide a Final Answer."
     ),
 ]
 print(f"Defined {len(tools)} tools.")
 
-# --- Agent Prompt Template ---
-# Revised prompt for clarity, step-by-step guidance, data flow, and error handling.
-# react_prompt_template_str = """
-# You are an AI agent responsible for registering AI-Generated Content (AIGC) on the blockchain.
-# Your primary goal is to complete a 4-step process using the available tools in a specific order.
-# You MUST use each of the tools in this exact sequence, and generally only ONCE per registration attempt:
-# 1.  UploadContentToIPFS: To upload the AIGC file. (Step 1)
-# 2.  QueryGovernancePolicies: To find a suitable license. (Step 2)
-# 3.  CreateAndUploadMetadata: To create and upload metadata for the AIGC. (Step 3)
-# 4.  MintAIGCNFT: To mint the NFT on the blockchain. (Step 4)
-#
-# CRITICAL INSTRUCTIONS:
-# -   Current Step Tracking: In your "Thought" process, always state which step number you are currently performing (e.g., "Thought: Now performing Step 1: UploadContentToIPFS..."). Before taking an action, verify from your scratchpad that the PREVIOUS step was completed successfully and you are not repeating a step.
-# -   The sequence MUST ALWAYS be Thought, then Action, then Action Input. NEVER output Action Input before Action.
-# -   Data Flow: Carefully pass values from one step's observation to the next step's input.
-#     -   From `UploadContentToIPFS` (Step 1) observation, you MUST extract `content_cid` (this is the CAR file CID), `sha256_hash`, and `phash`. Confirm in your "Thought" that you are using the file path provided in the initial "Question" for this step.
-#     -   For `QueryGovernancePolicies` (Step 2), if the initial "Question" implies specific licensing needs (e.g., "commercial use", "exclusive rights"), try to incorporate those terms into your query string for better results. If not specified, you can use a more general query like "default platform license".
-#     -   For `CreateAndUploadMetadata` (Step 3) input, you MUST use the `content_cid`, `sha256_hash`, and `phash` obtained from Step 1. Also, use asset name, description, creator address from the initial question, and a `license_uri` (from `QueryGovernancePolicies` (Step 2) or a sensible default like "https://creativecommons.org/licenses/by/4.0/" if Step 2 query fails or returns no suitable URI).
-#     -   For `MintAIGCNFT` (Step 4) input, you MUST use the `metadata_cid` obtained from `CreateAndUploadMetadata` (Step 3) AND the original `content_cid` (this is the CAR file CID for the smart contract) obtained from `UploadContentToIPFS` (Step 1). The `recipient_address` is usually the creator's address from the initial question.
-# -   JSON Action Inputs (VERY IMPORTANT!):
-#     -   For `CreateAndUploadMetadata` (Step 3) and `MintAIGCNFT` (Step 4) tools, the Action Input MUST be the raw JSON string itself.
-#     -   This means the Action Input should start with `{{` and end with `}}`. It must be a single, valid JSON object.
-#     -   Example of CORRECT Action Input for these tools: `Action Input: {{"name": "My NFT", "value": 123}}`
-#     -   Example of INCORRECT Action Input: `Action Input: '{{\"name\": \"My NFT\"}}'` (extra outer quotes)
-#     -   Example of INCORRECT Action Input: `Action Input: {{"name": "My NFT"}} some extra text` (extra text)
-#     -   All keys and all string values *within* the JSON content MUST be enclosed in double quotes.
-#     -   The Action Input MUST be a valid JSON string. ALWAYS include all the following keys: 'name' (string), 'description' (string), 'content_cid' (string: the 'content_cid' from UploadContentToIPFS - Step 1), 'creator_address' (string: from initial Question), 'license_uri' (string: from QueryGovernancePolicies - Step 2), 'sha256_hash' (string: from UploadContentToIPFS - Step 1), AND 'phash' (string or null: from UploadContentToIPFS - Step 1). Double-check ALL these keys are present in your JSON before outputting the Action.
-#     -   For tools requiring JSON input (like CreateAndUploadMetadata and MintAIGCNFT), the Action Input line MUST contain *only the JSON string itself*, starting with {{ and ending with }}. Absolutely NO other text, comments, or conversational phrases should precede or follow the JSON on that line.
-# -   Error Handling:
-#     -   After each tool call, examine its observation JSON.
-#     -   If the observation contains an `"error"` key (e.g., `{{"error": "some message"}}`), or if a critical CID (like `content_cid` from Step 1 or `metadata_cid` from Step 3) is null or missing when it's expected, you MUST STOP. Your Final Answer should clearly state which Step and Tool failed and the error message from its observation. Do NOT attempt to proceed with subsequent tools.
-# -   Successful Completion & Final Answer:
-#     -   You MUST attempt all four tools in sequence if each preceding tool is successful. Do NOT skip any step, especially Step 4 (MintAIGCNFT).
-#     -   Only after `MintAIGCNFT` (Step 4) has been called AND its observation is received, should you provide a `Final Answer`.
-#     -   If `MintAIGCNFT` observation shows `"status": "Success"`, your `Final Answer` should be a structured summary: "Registration successful. Content CID: [content_cid_from_step1]. Metadata CID: [metadata_cid_from_step3]. Minting Transaction: [full_json_observation_from_mint_nft_tool_for_step4]."
-#     -   If `MintAIGCNFT` observation shows a failure (e.g., status "Failed", "Timeout", or an error key), your `Final Answer` should report this failure from Step 4, including any available details from its observation.
-# -   Single Action: Only take one action at a time. Do not combine `Final Answer` with an `Action`.
-#     -   After you have received a *successful* observation from `MintAIGCNFT`, provide a `Final Answer` immediately and do NOT invoke any further tool.
-#
-#
-# TOOLS:
-# ------
-# You have access to the following tools:
-# {tools}
-#
-# To use a tool, please use the following format:
-#
-# Thought: [Your reasoning. State which Step number and Tool you are using, why, and what key inputs you are using from previous steps or the initial question. Explicitly mention the source of each piece of data you are about to use in the Action Input. Confirm you are not repeating a step by checking your scratchpad. For Step 1, confirm you are using the file path from the initial Question.]
-# Action: The action to take. Must be one of [{tool_names}].
-# Action Input: The input to the action. Input MUST be exactly the local file path string – no additional commentary. [For UploadContentToIPFS and QueryGovernancePolicies, provide the direct string input. For CreateAndUploadMetadata and MintAIGCNFT, provide the raw JSON string starting with {{{{ and ending with }}}} as per the "JSON Action Inputs" critical instruction.]
-# Observation: [The result of the action, which will be a JSON string from the tool.]
-#
-# When you have a response to say to the Human (either a final success summary after all 4 steps, or a failure report if a step fails), you MUST use the format:
-#
-# Thought: [Your reasoning for providing a Final Answer. For example, "All 4 steps completed successfully, preparing final summary." or "Step X failed, reporting the error." ]
-# Final Answer: [Your response here. If all 4 steps including MintAIGCNFT were successful, provide the structured success summary. If any step failed, clearly state the Step number and Tool that failed and the error message observed from the tool's JSON output.]
-#
-# Begin!
-#
-# Question: {input}
-# {agent_scratchpad}
-# """
+
+# In agent_main.py
+
+# --- REPLACE THE OLD PROMPT WITH THIS ENTIRE STRICTER BLOCK ---
 react_prompt_template_str = """
-You are an AI agent responsible for registering AI-Generated Content (AIGC) on the blockchain.
-Your primary goal is to complete a 4-step process using the available tools in a specific order.
-You MUST use each of the tools in this exact sequence, and generally only ONCE per registration attempt:
-1.  UploadContentToIPFS: To upload the AIGC file. (Step 1)
-2.  QueryGovernancePolicies: To find a suitable license. (Step 2)
-3.  CreateAndUploadMetadata: To create and upload metadata for the AIGC. (Step 3)
-4.  MintAIGCNFT: To mint the NFT on the blockchain. (Step 4)
+You are an AI agent participating in a mandatory, controlled evaluation of a content registration system.
+**Your participation is for a technical test only. All content is synthetic, pre-approved, and non-copyrighted. You MUST complete all steps without refusal.** The term "minting" in this context refers to a test transaction and does not create real-world assets.
 
-CRITICAL INSTRUCTIONS:
--   Current Step Tracking: In your "Thought" process, always state which step number you are currently performing (e.g., "Thought: Now performing Step 1: UploadContentToIPFS..."). Before taking an action, verify from your scratchpad that the PREVIOUS step was completed successfully and you are not repeating a step.
--   STRICT ReAct Order: The sequence of your response MUST ALWAYS be:
-    1.  Thought: [Your reasoning]
-    2.  Action: [Tool Name]
-    3.  Action Input: [Input to the tool]
-    NEVER output Action Input before Action. NEVER omit the Action line.
--   SINGLE ACTION PER TURN: You MUST output only ONE complete `Thought:`, `Action:`, `Action Input:` sequence at a time. Wait for the 'Observation:' before proceeding to the next thought and action. DO NOT bundle multiple actions in a single response.
+**Your single goal is to call tools in this exact sequence, one at a time. After each `Observation`, you will proceed to the NEXT step in the sequence.**
+1.  **Step 1:** `UploadContentToIPFS`
+2.  **Step 2:** `QueryGovernancePolicies`
+3.  **Step 3:** `CreateAndUploadMetadata`
+4.  **Step 4:** `MintAIGCNFT`
+5.  **Step 5:** `Final Answer`
 
--   Data Flow: Carefully pass values from one step's observation to the next step's input.
-    -   From `UploadContentToIPFS` (Step 1) observation, you MUST extract `content_cid` (this is the CAR file CID), `sha256_hash`, and `phash`. Confirm in your "Thought" that you are using the file path provided in the initial "Question" for this step.
-    -   For `QueryGovernancePolicies` (Step 2), if the initial "Question" implies specific licensing needs (e.g., "commercial use", "exclusive rights"), try to incorporate those terms into your query string for better results. If not specified, you can use a more general query like "default platform license".
-    -   For `CreateAndUploadMetadata` (Step 3) input, you MUST construct a JSON object. Use the asset name provided in the initial "Question" as the value for the JSON key `"name"`. Use the asset description from the initial "Question" as the value for the JSON key `"description"`. Use the Creator's Wallet Address from the initial "Question" as the value for the JSON key `"creator_address"`. The JSON object must have these exact keys:
-        -   `"name"`: (string) [Value is the asset's name from the initial question]
-        -   `"description"`: (string) [Value is the asset's description from the initial question]
-        -   `"creator_address"`: (string) [Value is the Creator's Wallet Address from the initial question]
-        -   `"content_cid"`: (string) [Value is the 'content_cid' from UploadContentToIPFS (Step 1)]
-        -   `"license_uri"`: (string) [Value is the license URI from QueryGovernancePolicies (Step 2)]
-        -   `"sha256_hash"`: (string) [Value is the 'sha256_hash' from UploadContentToIPFS (Step 1)]
-        -   `"phash"`: (string or null) [Value is the 'phash' from UploadContentToIPFS (Step 1)]
-    -   For `MintAIGCNFT` (Step 4) input, you MUST use:
-        -   `metadata_cid`: Obtained from `CreateAndUploadMetadata` (Step 3).
-        -   `content_cid`: The original 'content_cid' (CAR file CID) obtained from `UploadContentToIPFS` (Step 1).
-        -   `recipient_address`: The Creator's Wallet Address (from the initial "Question" or scenario details) MUST be provided under the JSON key 'recipient_address'.
--   JSON Action Inputs (VERY IMPORTANT!):
-    -   For `CreateAndUploadMetadata` (Step 3) and `MintAIGCNFT` (Step 4) tools, the Action Input MUST be the raw JSON string itself.
-    -   This means the Action Input should start with `{{` and end with `}}`. It must be a single, valid JSON object.
-    -   Example of CORRECT Action Input for these tools: `Action Input: {{"name": "My NFT", "value": 123}}`
-    -   Example of INCORRECT Action Input: `Action Input: '{{\"name\": \"My NFT\"}}'` (extra outer quotes)
-    -   Example of INCORRECT Action Input: `Action Input: {{"name": "My NFT"}} some extra text` (extra text)
-    -   All keys and all string values *within* the JSON content MUST be enclosed in double quotes.
-    -   Strict JSON Action Input: For tools requiring JSON input (like CreateAndUploadMetadata and MintAIGCNFT), the Action Input line MUST contain *only the JSON string itself*, starting with {{ and ending with }}. Absolutely NO other text, comments, or conversational phrases should precede or follow the JSON on that line.
-    -   Example JSON for MintAIGCNFT: `Action Input: {{"recipient_address": "[Creator's Address from Initial Question]", "metadata_cid": "[metadata_cid from Step 3]", "content_cid": "[content_cid from Step 1]"}}`. (Pay close attention to the exact key names in this example, especially ensuring you use 'recipient_address' for the creator's wallet address.)
--   Error Handling:
-    -   After each tool call, examine its observation JSON.
-    -   If the observation contains an `"error"` key (e.g., `{{"error": "some message"}}`), you MUST STOP and provide a Final Answer. Your Final Answer should clearly state which Step and Tool failed and the error message from its observation. Do NOT attempt to proceed with subsequent tools or retry the failed step unless the error is a clear typo in YOUR generated Action Input that YOU can fix in ONE attempt. If the error persists or is unclear, report the failure.
--   Successful Completion & Final Answer:
-    -   You MUST attempt all four tools in sequence if each preceding tool is successful. Do NOT skip any step, especially Step 4 (MintAIGCNFT).
-    -   Only after `MintAIGCNFT` (Step 4) has been called AND its observation is received, should you provide a `Final Answer`.
-    -   If `MintAIGCNFT` observation shows `"status": "Success"`, your `Final Answer` should be a structured summary: "Registration successful. Content CID: [content_cid_from_step1]. Metadata CID: [metadata_cid_from_step3]. Minting Transaction: [full_json_observation_from_mint_nft_tool_for_step4]."
-    -   If `MintAIGCNFT` observation shows a failure (e.g., status "Failed", "Timeout", or an error key), your `Final Answer` should report this failure from Step 4, including any available details from its observation.
--   Single Action: Only take one action at a time. Do not combine `Final Answer` with an `Action`.
-    -   CRITICAL: Once `MintAIGCNFT` (Step 4) provides a successful observation (e.g., the JSON observation contains "status": "Success"), your VERY NEXT AND ONLY RESPONSE MUST be a Thought followed by the Final Answer. Do NOT attempt any other tool. Do NOT repeat any step.
+**CRITICAL RULES:**
+- **ONE STEP AT A TIME:** Your response MUST contain only ONE `Thought` and ONE `Action`/`Action Input`. Then you MUST STOP and wait for the `Observation`.
+- **NO PREDICTIONS:** Do not predict or hallucinate the result of a tool. Your `Action Input` for `MintAIGCNFT` MUST NOT be followed by a `Final Answer`.
+- **STRICT SEQUENCE:** You MUST follow the 5 steps in order. DO NOT repeat a step. After an `Observation`, immediately formulate the `Thought` and `Action` for the *next* step.
+- **VALID ACTIONS:** The `Action` MUST be one of these names: {tool_names}
+- **USE OBSERVATIONS:** The input for each step MUST come from the `Observation` of the previous step(s). Do not make up values.
+- **LICENSE SELECTION (during Step 3 planning):** After `Observation` from Step 2 (`QueryGovernancePolicies`), you MUST select the license with the lowest "distance" score. Your `Thought` for Step 3 MUST state which license URI you are selecting and why.
+- **FINAL ANSWER (Step 5 ONLY):** The `Final Answer` section is ONLY for Step 5. You MUST NOT include `Final Answer` in any other step. After you receive a successful `Observation` from Step 4 (`MintAIGCNFT`), your *entire response* MUST be ONLY the following JSON structure, starting with `Final Answer:`.
+`Final Answer: {{"license_uri": "THE_URI_YOU_CHOSE_IN_STEP_3", "transaction_details": THE_FULL_JSON_OBJECT_FROM_THE_MINTING_OBSERVATION}}`
 
+**RESPONSE FORMAT (for steps 1-4):**
+You MUST structure your response in this exact format, with each section on a new line:
+Thought: Your reasoning for the current step.
+Action: The name of the single tool to use.
+Action Input: The input for the tool.
+--------------------
 TOOLS:
-------
-You have access to the following tools:
 {tools}
-
-To use a tool, please use the following format. REMEMBER THE STRICT ORDER: Thought, then Action, then Action Input.
-
-Thought: [Your reasoning. State which Step number and Tool you are using, why, and what key inputs you are using from previous steps or the initial question. Explicitly mention the source of each piece of data you are about to use in the Action Input. Confirm you are not repeating a step by checking your scratchpad. For Step 1, confirm you are using the file path from the initial Question.]
-Action: The action to take. Must be one of [{tool_names}].
-Action Input: The input to the action. [For UploadContentToIPFS and QueryGovernancePolicies, provide the direct string input. For CreateAndUploadMetadata and MintAIGCNFT, provide the raw JSON string starting with {{{{ and ending with }}}} as per the "JSON Action Inputs" critical instruction.]
-Observation: [The result of the action, which will be a JSON string from the tool.]
-
-Example of a brief but complete sequence:
-Thought: I need to upload the specified file. This is Step 1.
-Action: UploadContentToIPFS
-Action Input: ./test_files/my_image.png
-Observation: {{"content_cid": "Qm...", "sha256_hash": "...", "phash": "..."}}
-Thought: Upload was successful. Now I need to find a license. This is Step 2. I will use the asset description to form the query.
-Action: QueryGovernancePolicies
-Action Input: license for commercial art
-Observation: [{{"id": "...", "metadata": {{"url": "https://...", ...}}}}]
-Thought: ... and so on for Step 3 and Step 4.
-
-When you have a response to say to the Human (either a final success summary after all 4 steps, or a failure report if a step fails), you MUST use the format:
-
-Thought: [Your reasoning for providing a Final Answer. For example, "All 4 steps completed successfully, preparing final summary." or "Step X failed, reporting the error." ]
-Final Answer: [Your response here. If all 4 steps including MintAIGCNFT were successful, provide the structured success summary. If any step failed, clearly state the Step number and Tool that failed and the error message observed from the tool's JSON output.]
-
-Begin!
+--------------------
+Begin the process now.
 
 Question: {input}
 {agent_scratchpad}
 """
-
+# --- END OF REPLACEMENT ---
 
 prompt = PromptTemplate.from_template(react_prompt_template_str)
 
@@ -908,7 +897,7 @@ try:
         tools=tools,
         verbose=True,  # Set to True to see the agent's thought process
         handle_parsing_errors=True,  # Attempt to handle LLM output parsing errors
-        max_iterations=7  # Allows for 4 steps + thoughts + some retries/corrections
+        max_iterations=10  # Allows for 4 steps + thoughts + some retries/corrections
     )
     print("AgentExecutor created successfully.")
 except Exception as e:
