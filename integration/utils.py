@@ -58,6 +58,7 @@ def calculate_phash(file_path: str) -> str | None:
     except Exception as e:
         # Catch potential errors from PIL/imagehash if file is not a valid image
         print(f"Warning: Could not calculate pHash for {file_path}. Error: {e}")
+
         return None
 
 # Example usage (for testing this file directly)
