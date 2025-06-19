@@ -11,6 +11,8 @@ import agent_policy
 import agent_registration
 import shared_utils
 import json
+from agent_policy import run_policy_selection # Using your new rewritten agent
+from shared_utils import PolicyData
 
 
 def load_scenarios_from_csv(file_path='scenarios.csv'):
@@ -81,9 +83,15 @@ def main():
             # )
 
             # Step 2: Policy Agent
-            policy_result = agent_policy.run_policy_selection(
+            # policy_result = agent_policy.run_policy_selection(
+            #     asset_description=scenario["asset_description"],
+            #     vector_db=components["vector_db"],
+            #     llm=components["llm"]
+            # )
+
+            policy_result = run_policy_selection(
                 asset_description=scenario["asset_description"],
-                vector_db=components["vector_db"],
+                all_policies=all_policies,  # Pass the list here
                 llm=components["llm"]
             )
 
