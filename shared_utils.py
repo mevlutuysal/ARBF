@@ -50,6 +50,8 @@ class RegistrationData(BaseModel):
     token_id: str
     block_number: int
     status: str
+    gas_used : int
+    effective_gas_price: int = Field(description="The final gas price per unit in Wei.")
 
 
 # --- Centralized Component Initializer ---
@@ -82,8 +84,8 @@ def initialize_components():
     ipfs_storage.utils = integration_utils
 
     # Vector DB Manager
-    vector_db = VectorDBManager(collection_name="aigc_governance_policies", host="localhost", port=8000)
-    vector_db.collection = vector_db.client.get_collection(name=vector_db.collection_name)
+    # vector_db = VectorDBManager(collection_name="aigc_governance_policies", host="localhost", port=8000)
+    # vector_db.collection = vector_db.client.get_collection(name=vector_db.collection_name)
 
     # Web3 / Blockchain
     w3 = Web3(Web3.HTTPProvider(SEPOLIA_RPC_URL))
@@ -102,7 +104,7 @@ def initialize_components():
 
     return {
         "ipfs_storage": ipfs_storage,
-        "vector_db": vector_db,
+        # "vector_db": vector_db,
         "w3": w3,
         "agent_account": agent_account,
         "aigc_contract": aigc_contract,

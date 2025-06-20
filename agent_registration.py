@@ -87,7 +87,8 @@ def run_registration(
 
     # --- 3. Parse Receipt and Return ---
     status = "Success" if tx_receipt.status == 1 else "Failed"
-    token_id = "N/A"
+    token_id = tx_receipt.get('tokenId', -1)
+    gas_used = tx_receipt.get('gasUsed', 0)
 
     # --- FIX START: Use robust event processing ---
     try:
@@ -110,5 +111,6 @@ def run_registration(
         transaction_hash=tx_hash.hex(),
         token_id=token_id,
         block_number=tx_receipt.blockNumber,
-        status=status
+        status=status,
+        gas_used= gas_used
     )

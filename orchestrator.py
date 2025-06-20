@@ -77,10 +77,10 @@ def main():
         try:
             # --- AGENT WORKFLOW ---
             # Step 1: Ingestion Agent
-            # ingestion_result = agent_ingestion.run_ingestion(
-            #     file_path=scenario["content_file"],
-            #     ipfs_manager=components["ipfs_storage"]
-            # )
+            ingestion_result = agent_ingestion.run_ingestion(
+                file_path=scenario["content_file"],
+                ipfs_manager=components["ipfs_storage"]
+            )
 
             # Step 2: Policy Agent
             # policy_result = agent_policy.run_policy_selection(
@@ -96,12 +96,12 @@ def main():
             )
 
             # Step 3: Registration Agent
-            # registration_result = agent_registration.run_registration(
-            #     ingestion_data=ingestion_result,
-            #     policy_data=policy_result,
-            #     scenario_data=scenario,
-            #     components=components
-            # )
+            registration_result = agent_registration.run_registration(
+                ingestion_data=ingestion_result,
+                policy_data=policy_result,
+                scenario_data=scenario,
+                components=components
+            )
 
         except Exception as e:
             final_status = "Failed"
@@ -124,6 +124,7 @@ def main():
             "scenario_id": scenario["scenario_id"],
             "final_status": final_status,
             "latency_seconds": f"{latency:.2f}",
+            "gas_cost": registration_result.gas_used,
             "expected_license": scenario["expected_license_uri"],
             "selected_license": policy_result.selected_license_uri,
             "is_correct": is_correct,
@@ -131,7 +132,7 @@ def main():
             "error_message": error_message
         })
         print(
-            f"✅ Result: Status={final_status}, CorrectLicense={bool(is_correct)}, Latency={latency:.2f}s")
+            f"✅ Result: Status={final_status}, CorrectLicense={bool(is_correct)}, Latency={latency:.2f}s, GasCost={registration_result.gas_used}")
 
     # 5. Save results to CSV
     csv_file = 'evaluation_results_refactored.csv'

@@ -37,10 +37,9 @@ def parse_llm_json_output(llm_output: str) -> dict:
 
 def build_prompt(all_policies: list, scenario_description: str) -> str:
     """
-    Builds a highly structured, robust prompt to guide the LLM's reasoning.
+    Builds a highly structured, robust prompt with a one-shot example to guide the LLM.
 
-    This revised prompt is more forceful about the output format and provides
-    more detailed instructions to improve the accuracy of license selection.
+    This final version includes explicit instructions to prevent hallucination and self-contradiction.
     """
     policies_str = json.dumps(all_policies, indent=2)
 
@@ -49,19 +48,42 @@ def build_prompt(all_policies: list, scenario_description: str) -> str:
 You are a meticulous and highly precise IP counsel expert. Your task is to select the single most appropriate license from a list. You must follow all instructions exactly.
 
 **CRITICAL INSTRUCTIONS:**
-1.  **Analyze Requirements**: Scrutinize the user's scenario to identify every constraint. Pay extremely close attention to key phrases like "non-commercial," "no derivatives," "share alike," "editorial use," "software," and "public domain."
-2.  **Compare Rigorously**: Compare these constraints against the `text` of each policy in the `AVAILABLE_POLICIES` list. Your primary goal is to find the policy that satisfies ALL requirements.
-3.  **Prioritize Specificity**: If multiple licenses seem to fit, you MUST choose the MOST SPECIFIC one. For example, if a scenario describes editorial use, select 'editorial-use-only-v1' over a more general 'cc-by-nc-4.0'. If it describes software, 'gpl-3.0' or 'MIT' are likely better than a general Creative Commons license.
-4.  **Double-Check Your Work**: Before finalizing, re-read the scenario and your chosen policy's text to confirm they are a perfect match. Acknowledge and correctly interpret negative constraints (e.g., 'not for profit' means a Non-Commercial license is required).
+1.  **Analyze Requirements**: Scrutinize the user's scenario to identify every constraint.
+2.  **Compare Rigorously**: Compare these constraints against the `text` of each policy in `AVAILABLE_POLICIES`.
+3.  **Prioritize Specificity**: If multiple licenses seem to fit, you MUST choose the MOST SPECIFIC one (e.g., 'editorial-use-only-v1' is better than 'cc-by-nc-4.0' for news articles).
+4.  **ONLY USE PROVIDED IDs**: You MUST ONLY select an `id` from the `AVAILABLE_POLICIES` list. Do not invent, assume, or hallucinate license IDs. If the perfect license (e.g., 'cc-by-nd-4.0') is not in the list, you must choose the best available alternative from the list provided.
+5.  **Common Pitfalls to Avoid**:
+    * **CRITICAL CONTRADICTION**: Never select a Non-Commercial ('NC') license for a scenario that allows or requires commercial use. This is a fundamental error.
+    * **No Derivatives vs. Share Alike**: Do NOT confuse 'No Derivatives' (derivatives are forbidden) with 'Share Alike' (derivatives are allowed but must use the same license).
+    * **Attribution vs. Public Domain**: Do NOT confuse `cc-by-4.0` (which requires attribution) with `cc0-1.0` (which has no attribution requirement).
 
 **OUTPUT FORMATTING (ABSOLUTE REQUIREMENT):**
-- Your entire response MUST be a single, valid JSON object and NOTHING else.
-- Do NOT include any text, explanation, markdown, or formatting before or after the JSON object.
-- The JSON object MUST have two top-level keys: "analysis" and "justification".
-- The "analysis" value MUST be an OBJECT containing:
-    - `thought_process`: A list of strings detailing your step-by-step reasoning.
-    - `selected_license_id`: A string with the ID of your final chosen license.
-- The "justification" value MUST be a SINGLE STRING explaining why your choice is correct.
+- Your entire response MUST be a single, syntactically perfect JSON object and NOTHING else.
+- Do NOT include any text, explanation, or markdown before or after the JSON object.
+- The JSON object must be 100% machine-parsable. Pay close attention to commas, quotes, and brackets.
+
+**EXAMPLE OF PERFECT OUTPUT:**
+---
+[USER EXAMPLE]
+Here are the available policies: ...
+Here is the user's scenario:
+`SCENARIO_DESCRIPTION`: "A photograph for my blog. I don't want people using it for profit, and they must give me credit."
+
+[YOUR PERFECT RESPONSE EXAMPLE]
+{{
+  "analysis": {{
+    "thought_process": [
+      "The user needs a license for a photograph for their blog.",
+      "Constraint 1: Not for profit. This means the license must be non-commercial.",
+      "Constraint 2: They must give me credit. This means the license must require attribution.",
+      "Searching the policies, 'cc-by-nc-4.0' requires both Attribution (BY) and is NonCommercial (NC).",
+      "This is a perfect match for all constraints."
+    ],
+    "selected_license_id": "cc-by-nc-4.0"
+  }},
+  "justification": "The 'cc-by-nc-4.0' license is the correct choice because it perfectly matches the user's two requirements: it strictly forbids commercial use ('NonCommercial') and requires that credit be given to the creator ('Attribution')."
+}}
+---
 
 [USER]
 Here are the available policies:
@@ -71,7 +93,7 @@ Here are the available policies:
 Here is the user's scenario:
 `SCENARIO_DESCRIPTION`: "{scenario_description}"
 
-Now, perform the analysis and provide the single JSON object as your response.
+Now, perform the analysis and provide the single, syntactically perfect JSON object as your response.
 """
     return prompt
 
@@ -92,7 +114,7 @@ def run_policy_selection(
     print(f"[Policy Agent] Received LLM response.")
 
     try:
-        # Use the new robust parser to extract clean JSON
+        # Use the robust parser to extract clean JSON
         result = parse_llm_json_output(llm_output)
 
         analysis = result.get("analysis")
