@@ -62,6 +62,10 @@ def main():
     print("Loading policies from source file...")
     all_policies = load_policies_from_file("policies.json")
 
+    # Get the web3 instance for unit conversions
+    w3 = components["w3"]
+
+
     # 3. Run the workflow for each scenario
     for i, scenario in enumerate(scenarios):
         print(f"\n--- 🏃 Running Scenario {i + 1}/{len(scenarios)}: {scenario['scenario_id']} ---")
@@ -73,6 +77,8 @@ def main():
         start_time = time.time()
         final_status = "Success"
         error_message = ""
+        gas_price_gwei = 0
+        cost_eth = 0
 
         try:
             # --- AGENT WORKFLOW ---
@@ -103,6 +109,16 @@ def main():
                 components=components
             )
 
+            # --- Cost Calculation ---
+            if registration_result.status == "Success":
+                gas_price_wei = registration_result.effective_gas_price
+                gas_used = registration_result.gas_used
+                # Convert Wei to Gwei for readability
+                gas_price_gwei = w3.from_wei(gas_price_wei, 'gwei')
+                # Calculate total cost in ETH
+                cost_eth = w3.from_wei(gas_used * gas_price_wei, 'ether')
+
+
         except Exception as e:
             final_status = "Failed"
             error_message = str(e)
@@ -110,7 +126,9 @@ def main():
             # In a real system, you might not have these results, so fill with placeholders
             policy_result = shared_utils.PolicyData(selected_license_uri="N/A (due to error)")
             registration_result = shared_utils.RegistrationData(metadata_cid="N/A", transaction_hash="N/A",
-                                                                token_id="N/A", block_number=0, status="Failed")
+                                                                token_id="N/A", block_number=0, status="Failed",
+                                                                gas_used=0, effective_gas_price=0)
+
 
         latency = time.time() - start_time
 
@@ -124,7 +142,9 @@ def main():
             "scenario_id": scenario["scenario_id"],
             "final_status": final_status,
             "latency_seconds": f"{latency:.2f}",
-            "gas_cost": registration_result.gas_used,
+            "gas_used": registration_result.gas_used,
+            "gas_price_gwei": f"{gas_price_gwei:.4f}",
+            "cost_eth": f"{cost_eth:.8f}",
             "expected_license": scenario["expected_license_uri"],
             "selected_license": policy_result.selected_license_uri,
             "is_correct": is_correct,
@@ -132,7 +152,8 @@ def main():
             "error_message": error_message
         })
         print(
-            f"✅ Result: Status={final_status}, CorrectLicense={bool(is_correct)}, Latency={latency:.2f}s, GasCost={registration_result.gas_used}")
+            f"✅ Result: Status={final_status}, CorrectLicense={bool(is_correct)}, Latency={latency:.2f}s, GasUsed={registration_result.gas_used}, GasPrice={gas_price_gwei:.4f} Gwei, Cost={cost_eth:.8f} ETH")
+
 
     # 5. Save results to CSV
     csv_file = 'evaluation_results_refactored.csv'

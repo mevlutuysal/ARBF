@@ -21,7 +21,6 @@ from langchain_ollama import OllamaLLM
 
 # Local Integration Components
 try:
-    from integration.vector_db_manager import VectorDBManager
     from integration.ipfs_storage_manager import IPFSStorageManager
     from integration import utils as integration_utils
 except ImportError:
@@ -83,9 +82,6 @@ def initialize_components():
     ipfs_storage = IPFSStorageManager(jwt_token=PINATA_JWT_TOKEN)
     ipfs_storage.utils = integration_utils
 
-    # Vector DB Manager
-    # vector_db = VectorDBManager(collection_name="aigc_governance_policies", host="localhost", port=8000)
-    # vector_db.collection = vector_db.client.get_collection(name=vector_db.collection_name)
 
     # Web3 / Blockchain
     w3 = Web3(Web3.HTTPProvider(SEPOLIA_RPC_URL))
@@ -104,7 +100,6 @@ def initialize_components():
 
     return {
         "ipfs_storage": ipfs_storage,
-        # "vector_db": vector_db,
         "w3": w3,
         "agent_account": agent_account,
         "aigc_contract": aigc_contract,

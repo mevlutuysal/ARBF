@@ -89,6 +89,9 @@ def run_registration(
     status = "Success" if tx_receipt.status == 1 else "Failed"
     token_id = tx_receipt.get('tokenId', -1)
     gas_used = tx_receipt.get('gasUsed', 0)
+    # Capture the effective gas price from the receipt (in Wei)
+    effective_gas_price = tx_receipt.get('effectiveGasPrice', 0)
+
 
     # --- FIX START: Use robust event processing ---
     try:
@@ -112,5 +115,6 @@ def run_registration(
         token_id=token_id,
         block_number=tx_receipt.blockNumber,
         status=status,
-        gas_used= gas_used
+        gas_used=gas_used,
+        effective_gas_price=effective_gas_price
     )
