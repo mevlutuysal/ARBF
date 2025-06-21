@@ -2,153 +2,161 @@
   {
     "id": "standard-commercial-v1",
     "text": "This is a standard commercial license for general marketplace assets. It grants non-exclusive rights to use the asset in commercial projects, for-profit activities. The asset can be modified and used for business purposes. This is not for software code.",
-    "metadata": {
-      "url": "https://metaverse.myplatform.com/licenses/standard-commercial-v1",
-      "type": "Commercial"
+    "metadata": { "url": "https://metaverse.myplatform.com/licenses/standard-commercial-v1", "type": "Commercial" },
+    "profile": {
+      "commercial_use": "allowed", "derivatives": "allowed", "attribution": "not_required", "distribution": "allowed", "exclusivity": "non_exclusive", "scope": "general"
     }
   },
   {
     "id": "cc-by-4.0",
     "text": "This is the Creative Commons Attribution 4.0 license (CC-BY). It allows others to share, use, adapt, and build upon the work, even for commercial purposes. The only requirement is to provide proper attribution (credit) to the original creator. It is a permissive, open source license.",
-    "metadata": {
-      "url": "https://creativecommons.org/licenses/by/4.0/",
-      "type": "Open Source"
+    "metadata": { "url": "https://creativecommons.org/licenses/by/4.0/", "type": "Open Source" },
+    "profile": {
+      "commercial_use": "allowed", "derivatives": "allowed", "attribution": "required", "distribution": "allowed", "exclusivity": "non_exclusive", "scope": "general"
     }
   },
   {
     "id": "all-rights-reserved-v1",
     "text": "All rights are reserved. This is a highly restrictive, proprietary and confidential license. No use, distribution, or modification is permitted without explicit, direct permission from the rights holder. It is not for commercial use and not open source.",
-    "metadata": {
-      "url": "https://metaverse.myplatform.com/licenses/all-rights-reserved-v1",
-      "type": "Proprietary"
+    "metadata": { "url": "https://metaverse.myplatform.com/licenses/all-rights-reserved-v1", "type": "Proprietary" },
+    "profile": {
+      "commercial_use": "disallowed", "derivatives": "disallowed", "attribution": "not_required", "distribution": "disallowed", "exclusivity": "exclusive", "scope": "proprietary"
     }
   },
   {
     "id": "cc0-1.0",
     "text": "This is CC0, the Creative Commons Zero license, which dedicates the work to the public domain. The creator has waived all copyright and related rights. The asset is completely free for any use, including commercial, non-commercial, modification, and distribution, with no attribution required. It is the most permissive option available.",
-    "metadata": {
-      "url": "https://creativecommons.org/publicdomain/zero/1.0/",
-      "type": "Public Domain"
+    "metadata": { "url": "https://creativecommons.org/publicdomain/zero/1.0/", "type": "Public Domain" },
+    "profile": {
+      "commercial_use": "allowed", "derivatives": "allowed", "attribution": "not_required", "distribution": "allowed", "exclusivity": "non_exclusive", "scope": "public_domain"
     }
   },
   {
     "id": "cc-by-nc-4.0",
     "text": "This is the Creative Commons Attribution-NonCommercial 4.0 license. It allows others to share and adapt the work, but strictly for non-commercial purposes. Any commercial use or for-profit activity is forbidden. Attribution to the creator is required.",
-    "metadata": {
-      "url": "https://creativecommons.org/licenses/by-nc/4.0/",
-      "type": "Open Source"
+    "metadata": { "url": "https://creativecommons.org/licenses/by-nc/4.0/", "type": "Open Source" },
+    "profile": {
+      "commercial_use": "disallowed", "derivatives": "allowed", "attribution": "required", "distribution": "allowed", "exclusivity": "non_exclusive", "scope": "general"
     }
   },
   {
     "id": "unique-collectible-commercial-owner-v1",
     "text": "This license is for a unique, one-of-a-kind digital collectible, such as a single-instance NFT. The owner of the asset is granted full and exclusive commercial rights to use and monetize it.",
-    "metadata": {
-      "url": "https://metaverse.myplatform.com/licenses/unique-collectible-commercial-owner-v1",
-      "type": "NFT Commercial"
+    "metadata": { "url": "https://metaverse.myplatform.com/licenses/unique-collectible-commercial-owner-v1", "type": "NFT Commercial" },
+    "profile": {
+      "commercial_use": "allowed", "derivatives": "allowed", "attribution": "not_required", "distribution": "allowed", "exclusivity": "exclusive", "scope": "nft"
     }
   },
   {
     "id": "gpl-3.0",
     "text": "This is the GNU General Public License v3.0, a strong 'copyleft' license typically for software. It allows free use, modification, and distribution, but requires that any derivative works or software that uses it must also be licensed under the same GPL terms.",
-    "metadata": {
-      "url": "https://www.gnu.org/licenses/gpl-3.0.en.html",
-      "type": "Copyleft"
+    "metadata": { "url": "https://www.gnu.org/licenses/gpl-3.0.en.html", "type": "Copyleft" },
+    "profile": {
+      "commercial_use": "allowed", "derivatives": "share_alike", "attribution": "required", "distribution": "allowed", "exclusivity": "non_exclusive", "scope": "software"
     }
   },
   {
     "id": "personal-use-only-v1",
     "text": "This license is strictly for personal, non-commercial use only. Commercial use is forbidden. The asset cannot be sold, re-distributed, or used in any project that involves monetary gain. No public distribution is allowed.",
-    "metadata": {
-      "url": "https://metaverse.myplatform.com/licenses/personal-use-only-v1",
-      "type": "Personal"
+    "metadata": { "url": "https://metaverse.myplatform.com/licenses/personal-use-only-v1", "type": "Personal" },
+    "profile": {
+      "commercial_use": "disallowed", "derivatives": "disallowed", "attribution": "not_required", "distribution": "disallowed", "exclusivity": "non_exclusive", "scope": "personal"
     }
   },
   {
     "id": "exclusive-commercial-transfer-v1",
     "text": "This license represents a full and exclusive transfer of commercial rights to a single person or entity. After the transfer, no one else, including the original creator, can use the asset for commercial purposes. The licensee gets sole rights.",
-    "metadata": {
-      "url": "https://metaverse.myplatform.com/licenses/exclusive-commercial-transfer-v1",
-      "type": "Exclusive Commercial"
+    "metadata": { "url": "https://metaverse.myplatform.com/licenses/exclusive-commercial-transfer-v1", "type": "Exclusive Commercial" },
+    "profile": {
+      "commercial_use": "allowed", "derivatives": "allowed", "attribution": "not_required", "distribution": "allowed", "exclusivity": "exclusive", "scope": "commercial_transfer"
     }
   },
   {
     "id": "cc-by-nc-nd-4.0",
     "text": "This is the Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 license. It allows sharing the work for non-commercial purposes, but it cannot be modified or adapted in any way. It must be shared as is, with credit to the creator.",
-    "metadata": {
-      "url": "https://creativecommons.org/licenses/by-nc-nd/4.0/",
-      "type": "Open Source"
+    "metadata": { "url": "https://creativecommons.org/licenses/by-nc-nd/4.0/", "type": "Open Source" },
+    "profile": {
+      "commercial_use": "disallowed", "derivatives": "disallowed", "attribution": "required", "distribution": "allowed", "exclusivity": "non_exclusive", "scope": "general"
+    }
+  },
+  {
+    "id": "cc-by-nd-4.0",
+    "text": "This is the Creative Commons Attribution-NoDerivatives 4.0 license. It allows for redistribution, commercial and non-commercial, as long as it is passed along unchanged and in whole, with credit to you.",
+    "metadata": { "url": "https://creativecommons.org/licenses/by-nd/4.0/", "type": "Open Source" },
+    "profile": {
+      "commercial_use": "allowed", "derivatives": "disallowed", "attribution": "required", "distribution": "allowed", "exclusivity": "non_exclusive", "scope": "general"
     }
   },
   {
     "id": "cc-by-sa-4.0",
     "text": "This is the Creative Commons Attribution-ShareAlike 4.0 license, a strong 'copyleft' license. It allows commercial use, modification, and distribution, but requires attribution (credit) and that any new creations or derivative works MUST also be licensed under these identical ShareAlike terms.",
-    "metadata": {
-      "url": "https://creativecommons.org/licenses/by-sa/4.0/",
-      "type": "Copyleft"
+    "metadata": { "url": "https://creativecommons.org/licenses/by-sa/4.0/", "type": "Copyleft" },
+    "profile": {
+      "commercial_use": "allowed", "derivatives": "share_alike", "attribution": "required", "distribution": "allowed", "exclusivity": "non_exclusive", "scope": "general"
     }
   },
   {
     "id": "nonexclusive-royaltyfree-music-v1",
     "text": "This is a non-exclusive, royalty-free license, typically for music or sound effects. After a one-time fee, the buyer can use the asset in unlimited commercial projects forever without paying future royalties.",
-    "metadata": {
-      "url": "https://metaverse.myplatform.com/licenses/nonexclusive-royaltyfree-music-v1",
-      "type": "Royalty-Free"
+    "metadata": { "url": "https://metaverse.myplatform.com/licenses/nonexclusive-royaltyfree-music-v1", "type": "Royalty-Free" },
+    "profile": {
+      "commercial_use": "allowed", "derivatives": "allowed", "attribution": "not_required", "distribution": "allowed", "exclusivity": "non_exclusive", "scope": "music"
     }
   },
   {
     "id": "editorial-use-only-v1",
     "text": "This license restricts the asset to editorial purposes only, such as in news articles, reporting, journalism, or non-fiction documentaries. It cannot be used for commercial, promotional, or advertising purposes. Use in products for sale is forbidden.",
-    "metadata": {
-      "url": "https://metaverse.myplatform.com/licenses/editorial-use-only-v1",
-      "type": "Restricted"
+    "metadata": { "url": "https://metaverse.myplatform.com/licenses/editorial-use-only-v1", "type": "Restricted" },
+    "profile": {
+      "commercial_use": "restricted", "derivatives": "disallowed", "attribution": "required", "distribution": "restricted", "exclusivity": "non_exclusive", "scope": "editorial"
     }
   },
   {
     "id": "MIT",
     "text": "This is the MIT License, a permissive open-source software license. It allows people to do almost anything they want with the software, including using it in proprietary software, with the only major condition being that the original copyright and license notice are included.",
-    "metadata": {
-      "url": "https://opensource.org/licenses/MIT",
-      "type": "Permissive"
+    "metadata": { "url": "https://opensource.org/licenses/MIT", "type": "Permissive" },
+    "profile": {
+      "commercial_use": "allowed", "derivatives": "allowed", "attribution": "required", "distribution": "allowed", "exclusivity": "non_exclusive", "scope": "software"
     }
   },
   {
     "id": "virtual-land-use-restricted-v1",
     "text": "This license governs the use of a plot of virtual land within a specific platform. The owner can build on it, but is subject to restrictions and terms of service, which may prohibit certain activities like gambling or commercial operations.",
-    "metadata": {
-      "url": "https://metaverse.myplatform.com/licenses/virtual-land-use-restricted-v1",
-      "type": "Restricted Use"
+    "metadata": { "url": "https://metaverse.myplatform.com/licenses/virtual-land-use-restricted-v1", "type": "Restricted Use" },
+    "profile": {
+      "commercial_use": "restricted", "derivatives": "allowed", "attribution": "not_required", "distribution": "restricted", "exclusivity": "exclusive", "scope": "virtual_land"
     }
   },
   {
     "id": "platform-exclusive-asset-v1",
     "text": "This license restricts the use of an asset to a single, specific platform, game, or virtual environment. It cannot be exported or used in any other context.",
-    "metadata": {
-      "url": "https://metaverse.myplatform.com/licenses/platform-exclusive-asset-v1",
-      "type": "Platform Exclusive"
+    "metadata": { "url": "https://metaverse.myplatform.com/licenses/platform-exclusive-asset-v1", "type": "Platform Exclusive" },
+    "profile": {
+      "commercial_use": "allowed", "derivatives": "allowed", "attribution": "not_required", "distribution": "disallowed", "exclusivity": "non_exclusive", "scope": "platform_specific"
     }
   },
   {
     "id": "cc-by-nc-sa-4.0",
     "text": "This is the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 license. It allows others to remix and build upon the work non-commercially, as long as they provide credit and license their new creations under the identical terms.",
-    "metadata": {
-      "url": "https://creativecommons.org/licenses/by-nc-sa/4.0/",
-      "type": "Copyleft"
+    "metadata": { "url": "https://creativecommons.org/licenses/by-nc-sa/4.0/", "type": "Copyleft" },
+    "profile": {
+      "commercial_use": "disallowed", "derivatives": "share_alike", "attribution": "required", "distribution": "allowed", "exclusivity": "non_exclusive", "scope": "general"
     }
   },
   {
     "id": "trademark-use-only-v1",
     "text": "This license applies to brand assets like logos or trademarks. It allows use of the asset only for the promotion of the associated brand or product. It cannot be used on other products or in a way that implies endorsement without permission.",
-    "metadata": {
-      "url": "https://metaverse.myplatform.com/licenses/trademark-use-only-v1",
-      "type": "Trademark"
+    "metadata": { "url": "https://metaverse.myplatform.com/licenses/trademark-use-only-v1", "type": "Trademark" },
+    "profile": {
+      "commercial_use": "restricted", "derivatives": "disallowed", "attribution": "not_required", "distribution": "restricted", "exclusivity": "non_exclusive", "scope": "trademark"
     }
   },
   {
     "id": "nonexclusive-commercial-v1",
     "text": "This is a non-exclusive commercial license. The asset can be used for business and for-profit purposes, but the same license can also be granted to other licensees. It does not provide exclusive rights. The creator still holds the copyright.",
-    "metadata": {
-      "url": "https://metaverse.myplatform.com/licenses/nonexclusive-commercial-v1",
-      "type": "Commercial"
+    "metadata": { "url": "https://metaverse.myplatform.com/licenses/nonexclusive-commercial-v1", "type": "Commercial" },
+    "profile": {
+      "commercial_use": "allowed", "derivatives": "allowed", "attribution": "not_required", "distribution": "allowed", "exclusivity": "non_exclusive", "scope": "general"
     }
   }
 ]

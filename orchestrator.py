@@ -13,6 +13,7 @@ import shared_utils
 import json
 from agent_policy import run_policy_selection # Using your new rewritten agent
 from shared_utils import PolicyData
+from sentence_transformers import SentenceTransformer
 
 
 def load_scenarios_from_csv(file_path='scenarios.csv'):
@@ -83,10 +84,10 @@ def main():
         try:
             # --- AGENT WORKFLOW ---
             # Step 1: Ingestion Agent
-            ingestion_result = agent_ingestion.run_ingestion(
-                file_path=scenario["content_file"],
-                ipfs_manager=components["ipfs_storage"]
-            )
+            # ingestion_result = agent_ingestion.run_ingestion(
+            #     file_path=scenario["content_file"],
+            #     ipfs_manager=components["ipfs_storage"]
+            # )
 
             # Step 2: Policy Agent
             # policy_result = agent_policy.run_policy_selection(
@@ -98,25 +99,26 @@ def main():
             policy_result = run_policy_selection(
                 asset_description=scenario["asset_description"],
                 all_policies=all_policies,  # Pass the list here
-                llm=components["llm"]
+                llm=components["llm"],
+                embedding_model = SentenceTransformer('nomic-ai/nomic-embed-text-v1.5', trust_remote_code=True)
             )
 
             # Step 3: Registration Agent
-            registration_result = agent_registration.run_registration(
-                ingestion_data=ingestion_result,
-                policy_data=policy_result,
-                scenario_data=scenario,
-                components=components
-            )
+            # registration_result = agent_registration.run_registration(
+            #     ingestion_data=ingestion_result,
+            #     policy_data=policy_result,
+            #     scenario_data=scenario,
+            #     components=components
+            # )
 
             # --- Cost Calculation ---
-            if registration_result.status == "Success":
-                gas_price_wei = registration_result.effective_gas_price
-                gas_used = registration_result.gas_used
-                # Convert Wei to Gwei for readability
-                gas_price_gwei = w3.from_wei(gas_price_wei, 'gwei')
-                # Calculate total cost in ETH
-                cost_eth = w3.from_wei(gas_used * gas_price_wei, 'ether')
+            # if registration_result.status == "Success":
+            #     gas_price_wei = registration_result.effective_gas_price
+            #     gas_used = registration_result.gas_used
+            #     # Convert Wei to Gwei for readability
+            #     gas_price_gwei = w3.from_wei(gas_price_wei, 'gwei')
+            #     # Calculate total cost in ETH
+            #     cost_eth = w3.from_wei(gas_used * gas_price_wei, 'ether')
 
 
         except Exception as e:
@@ -142,7 +144,7 @@ def main():
             "scenario_id": scenario["scenario_id"],
             "final_status": final_status,
             "latency_seconds": f"{latency:.2f}",
-            "gas_used": registration_result.gas_used,
+            # "gas_used": registration_result.gas_used,
             "gas_price_gwei": f"{gas_price_gwei:.4f}",
             "cost_eth": f"{cost_eth:.8f}",
             "expected_license": scenario["expected_license_uri"],
@@ -152,7 +154,7 @@ def main():
             "error_message": error_message
         })
         print(
-            f"✅ Result: Status={final_status}, CorrectLicense={bool(is_correct)}, Latency={latency:.2f}s, GasUsed={registration_result.gas_used}, GasPrice={gas_price_gwei:.4f} Gwei, Cost={cost_eth:.8f} ETH")
+            f"✅ Result: Status={final_status}, CorrectLicense={bool(is_correct)}, Latency={latency:.2f}s, GasUsed={0}, GasPrice={gas_price_gwei:.4f} Gwei, Cost={cost_eth:.8f} ETH")
 
 
     # 5. Save results to CSV

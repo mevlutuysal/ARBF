@@ -66,7 +66,9 @@ def initialize_components():
     PINATA_JWT_TOKEN = os.getenv("PINATA_JWT")
     AIGCREGISTRY_CONTRACT_ADDRESS = os.getenv("AIGCREGISTRY_CONTRACT_ADDRESS")
     ABI_FILE_PATH = "AIGCRegistry_abi.json"
-    LLM_MODEL = "llama3.1:8b-instruct-q6_K"
+   # LLM_MODEL = "llama3.1:8b-instruct-q6_K"
+    LLM_MODEL = "qwen2.5:14b-instruct-q5_K_M"
+    #LLM_MODEL = "llama3.3:70b-instruct-q5_K_M"
 
     # --- Validation ---
     if not all([SEPOLIA_RPC_URL, AGENT_PRIVATE_KEY, PINATA_JWT_TOKEN, AIGCREGISTRY_CONTRACT_ADDRESS]):
